@@ -254,7 +254,14 @@ class SigKernelFn(torch.autograd.Function):
         ctx.dyadic_order = dyadic_order
         return K[..., -1, -1]
 
+    # @once_differentiable: this Function does not provide higher-order
+    # gradients. Without it, autograd tracks ops inside backward() (e.g.
+    # the second `solve_pde(M_rev)` call), and the saved (M+1)×(N+1)
+    # K_rev tensor gets connected back to the M×N grad_M, producing a
+    # spurious "Mismatch in shape" error when the engine later checks
+    # double-backward consistency.
     @staticmethod
+    @torch.autograd.function.once_differentiable
     def backward(ctx, grad_output):
         M, K, X, Y = ctx.saved_tensors
         M_rev = torch.flip(M, dims=[-1, -2])
@@ -271,8 +278,17 @@ class SigKernelFn(torch.autograd.Function):
             *b, MM, NN = grad_M.shape
             grad_M = grad_M.reshape(*b, MM // n, n, NN // n, n).sum(dim=(-1, -3)) / float(n * n)
 
-        # Back-prop through double difference
-        gp = torch.nn.functional.pad(grad_M, (0, 1, 0, 1))
+        # Back-prop through double difference. Forward is
+        #   M[i,j] = G[i+1,j+1] + G[i,j] - G[i+1,j] - G[i,j+1]
+        # so the adjoint must produce grad_G of shape (L, L) from grad_M
+        # of shape (L-1, L-1). Padding grad_M by 1 on **all four** sides
+        # gives a tensor of shape (L+1, L+1) whose anti-diagonal slices
+        # are each (L, L), matching G's shape. Padding only on
+        # bottom-right (the previous (0,1,0,1) spec) yields (L-1, L-1)
+        # slices, off-by-one against G — autograd's _make_grads then
+        # raises "Mismatch in shape" on the torch.autograd.grad call
+        # below.
+        gp = torch.nn.functional.pad(grad_M, (1, 1, 1, 1))
         grad_G = gp[..., :-1, :-1] + gp[..., 1:, 1:] - gp[..., :-1, 1:] - gp[..., 1:, :-1]
 
         with torch.enable_grad():
@@ -296,7 +312,9 @@ class SigKernelDiagFn(torch.autograd.Function):
         ctx.dyadic_order = dyadic_order
         return K[..., -1, -1]
 
+    # See SigKernelFn.backward — same once_differentiable rationale.
     @staticmethod
+    @torch.autograd.function.once_differentiable
     def backward(ctx, grad_output):
         M, K, X, Y = ctx.saved_tensors
         M_rev = torch.flip(M, dims=[-1, -2])
@@ -311,7 +329,8 @@ class SigKernelDiagFn(torch.autograd.Function):
             *b, MM, NN = grad_M.shape
             grad_M = grad_M.reshape(*b, MM // n, n, NN // n, n).sum(dim=(-1, -3)) / float(n * n)
 
-        gp = torch.nn.functional.pad(grad_M, (0, 1, 0, 1))
+        # Pad on all four sides — see SigKernelFn.backward for the derivation.
+        gp = torch.nn.functional.pad(grad_M, (1, 1, 1, 1))
         grad_G = gp[..., :-1, :-1] + gp[..., 1:, 1:] - gp[..., :-1, 1:] - gp[..., 1:, :-1]
 
         with torch.enable_grad():
