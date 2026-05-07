@@ -45,7 +45,7 @@ neurips_anon_bundle/
 
 Python 3.10+ and a CUDA-capable GPU (≥ 24 GB recommended for the longer
 horizons) are required for the full benchmark; smaller experiments run on
-a single 16 GB GPU or CPU.
+a single 16 GB GPU or CPU. (For the largest datasets an A100 GPU was used, please use this for reproducibility testing)
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -62,7 +62,7 @@ Set `HF_TOKEN` if you need access to gated checkpoints.
 
 | Dataset       | Source                    | Target path                                                  |
 |---------------|---------------------------|--------------------------------------------------------------|
-| `cloud`       | bundled                   | `data/cloud/cloud.csv` (already present)                     |
+| `cloud`       | bundled                   | `data/cloud/cloud.csv`                                       |
 | `electricity` | Autoformer release        | `data/long_term_forecast/electricity/electricity.csv`        |
 | `ETTh1`       | Autoformer release        | `data/long_term_forecast/ETT-small/ETTh1.csv`                |
 | `ETTh2`       | Autoformer release        | `data/long_term_forecast/ETT-small/ETTh2.csv`                |
@@ -125,19 +125,19 @@ Expected wall-clock on a single A100: ≈ 6–10 hours full sweep.
 ### 4. Speed Comparison (ESK vs Salvi sigkernel, Laplacian static kernel)
 
 Per-sequence wall-time and peak GPU memory for the two backends across
-batch sizes {1, 8, 16, 32, 64} on real Exchange and Weather windows.
+batch sizes {1, 8, 16, 32, 64} on real Exchange, Cloud, and Weather windows.
 
 ```bash
 python -u src/experiments/speed_memory_comparison.py
 ```
 
-Requires `pip install -e sigkernel` and the two CSVs above.
+Requires `pip install -e sigkernel` and the three CSVs above.
 
 ### 5. Agent Decision Experiment
 
 Two scenarios — Markowitz mean-variance on `exchange_rate` and newsvendor
 capacity provisioning on `cloud` — × four-point sweep over the agent's
-risk aversion γ / cost asymmetry α. Reports Spearman ρ and top-1 hit
+risk aversion γ / cost asymmetry α. Reports Kendall tau and top-1 hit
 rate of each metric (CRPS, ES, QL, VS, SigMMD, CSig) versus the oracle
 realised-utility ranking, aggregated across seeds {2021…2025}.
 
