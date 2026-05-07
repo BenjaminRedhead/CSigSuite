@@ -114,9 +114,10 @@ def device():
     return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+@pytest.mark.gpu
 class TestGPUPipeline:
     """Test full pipeline on GPU."""
-    
+
     def test_gpu_end_to_end(self, device):
         """Test complete pipeline on GPU."""
         if device.type == 'cpu':

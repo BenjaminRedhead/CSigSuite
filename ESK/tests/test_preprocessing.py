@@ -151,6 +151,7 @@ def device():
     return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+@pytest.mark.gpu
 class TestGPUCompatibility:
     """Test GPU compatibility for preprocessing."""
     

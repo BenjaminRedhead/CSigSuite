@@ -119,8 +119,9 @@ class TestPDESolver:
         """K[0,:] = K[:,0] = 1."""
         M = torch.randn(8, 8)
         K = _solve_pde(M)
-        assert torch.allclose(K[0, :], torch.ones(9))
-        assert torch.allclose(K[:, 0], torch.ones(9))
+        # _solve_pde promotes M to float64 internally, so K is float64.
+        assert torch.allclose(K[0, :], torch.ones(9, dtype=K.dtype))
+        assert torch.allclose(K[:, 0], torch.ones(9, dtype=K.dtype))
 
     def test_positive_values_for_positive_increments(self):
         """PDE solution should be positive for small positive M_inc."""
@@ -136,10 +137,11 @@ class TestPDESolver:
 
     def test_matches_naive_double_loop(self):
         """Anti-diagonal sweep must match naive i,j loop."""
-        M = torch.randn(6, 6)
+        M = torch.randn(6, 6, dtype=torch.float64)
         L = 6
-        # Naive double loop
-        K_naive = torch.ones(L + 1, L + 1)
+        # Build the naive reference in float64 to match _solve_pde's
+        # internal promotion (it returns float64 regardless of input).
+        K_naive = torch.ones(L + 1, L + 1, dtype=torch.float64)
         for i in range(1, L + 1):
             for j in range(1, L + 1):
                 dt = M[i - 1, j - 1]
@@ -162,7 +164,10 @@ class TestDyadicRefinement:
         """Tiling should multiply dimensions by 2^n."""
         G = torch.randn(3, 4, 10, 10)  # batch static kernel
         M = _compute_M_inc(G, dyadic_order=0)
-        assert M.shape == (3, 4, 10, 10)  # double-diff of padded G
+        # No padding: double-difference of an L×L static kernel produces
+        # an (L-1)×(L-1) increment tensor (matches sigkernel's reference
+        # implementation; padding would inject spurious O(1) increments).
+        assert M.shape == (3, 4, 9, 9)
 
         M1 = _compute_M_inc(G, dyadic_order=1)
         # Each original dim of M multiplied by 2
@@ -180,9 +185,10 @@ class TestDyadicRefinement:
         """Order 0 should not change M_inc."""
         G = torch.randn(8, 8)
         M = _compute_M_inc(G, dyadic_order=0)
-        G_pad = torch.nn.functional.pad(G, (1, 0, 1, 0))
-        M_expected = (G_pad[1:, 1:] + G_pad[:-1, :-1]
-                      - G_pad[1:, :-1] - G_pad[:-1, 1:])
+        # Reference double-difference, no padding (matches kernel's
+        # implementation): produces (L-1)×(L-1) from L×L.
+        M_expected = (G[1:, 1:] + G[:-1, :-1]
+                      - G[1:, :-1] - G[:-1, 1:])
         assert torch.allclose(M, M_expected)
 
 
@@ -368,6 +374,7 @@ def device():
     return torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+@pytest.mark.gpu
 class TestGPUCompatibility:
 
     def test_rbf_kernel_gpu(self, device):
